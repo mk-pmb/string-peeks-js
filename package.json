@@ -1,0 +1,45 @@
+{ "name": "string-peeks",
+  "version": "0.0.1",
+  "description": "Peek into start of a string, remeber how much you've peeked, and discard that part. Also knows some tricks about angle brackets.",
+  "keywords": [
+    "angle brackets",
+    "buffer",
+    "html",
+    "parser",
+    "peek",
+    "string",
+    "xml"
+  ],
+
+  "author": "M.K. (https://github.com/mk-pmb)",
+  "homepage": "https://github.com/mk-pmb/string-peeks-js#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mk-pmb/string-peeks-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mk-pmb/string-peeks-js/issues"
+  },
+
+  "config": { "for_details": "see npm-config2env-datatypes-demo" },
+
+  "private": false, "license": "ISC",
+
+  "main": "peek.js",
+  "scripts": {
+    "test": "demo-util-160404-test-demos"
+  },
+  "directories": {
+    "doc": "doc",
+    "test": "test"
+  },
+
+  "dependencies": {
+  },
+  "devDependencies": {
+    "lib-demo-util-160404": "^0.1.0"
+  },
+
+
+  "npm vs. BOM = Unexpected token": "-*- coding: UTF-8 -*-"
+}
