@@ -3,6 +3,7 @@
 'use strict';
 
 var CF, PT,
+  isNum = function (x) { return ((typeof x) === 'number'); },
   isFunc = function (x) { return ((typeof x) === 'function'); },
   isRgx = function (x) { return (x instanceof RegExp); };
 
@@ -24,6 +25,13 @@ CF.utf8ent = {
   latinSmallFWithHook: '\u0192', // "ƒ"
 };
 CF.rgxAllSurrogatePairs = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+
+
+function slashSlots(m) {
+  var slot = this[m[1]];
+  if (slot !== undefined) { return slot; }
+  return JSON.parse('"' + m + '"');
+}
 
 
 PT.toString = function () {
@@ -168,6 +176,40 @@ PT.willDrain = function (doit) {
   doit += '; leftover string[' + this.buf.length + '] ' +
     JSON.stringify(this.buf.substr(0, 128));
   throw new Error('Function failed to drain buffer: ' + doit);
+};
+
+
+PT.calcPosLnChar = function () {
+  var eaten = this.eaten, ln = eaten.lines, ch = 0,
+    crntLine = eaten[eaten.length - 1];
+  if (crntLine) {
+    crntLine = crntLine.split(/\n/);
+    crntLine = crntLine[crntLine.length - 1];
+  }
+  if (crntLine) { ch += this.strlen_chars(crntLine); }
+  eaten = [ln, ch];
+  eaten.ln = ln;
+  eaten.ch = ch;
+  eaten.fmt = this.posFmt.bind(this, eaten);
+  return eaten;
+};
+
+
+PT.posFmtLn = 'line \\L';
+PT.posFmtLnCh = 'line \\L char \\C';
+PT.posFmtNumStart = 1;
+PT.posFmt = function (pos) {
+  var fmt;
+  if (isNum(pos.ln)) {
+    fmt = 'Ln';
+    if (isNum(pos.ch)) { fmt += 'Ch'; }
+  }
+  fmt = (fmt && this['posFmt' + fmt]);
+  if (!fmt) { return JSON.stringify(pos); }
+  return fmt.replace(/\\[LC]/g, slashSlots.bind({
+    L: pos.ln + this.posFmtNumStart,
+    C: pos.ch + this.posFmtNumStart,
+  }));
 };
 
 
