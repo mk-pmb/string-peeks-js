@@ -2,16 +2,24 @@
 /* -*- tab-width: 2 -*- */
 'use strict';
 
-var CF, PT,
-  isNum = function (x) { return ((typeof x) === 'number'); },
-  isFunc = function (x) { return ((typeof x) === 'function'); },
-  isRgx = function (x) { return (x instanceof RegExp); };
+var CF, PT;
+function isNum(x) { return ((typeof x) === 'number'); }
+function isFunc(x) { return ((typeof x) === 'function'); }
+function isRgx(x) { return (x instanceof RegExp); }
+function arrLast(arr) { return arr[arr.length - 1]; }
 
 
 CF = function StringPeeksTextBuffer(text, opts) {
-  if (text[0] === CF.utf8ent.byteOrderMark) { text = text.slice(1); }
+  this.byteOrderMark = '';
+  switch (text[0]) {
+  case CF.utf8ent.byteOrderMark:
+    this.byteOrderMark = text[0];
+    text = text.slice(1);
+    break;
+  }
   this.eaten = [];
-  this.eaten.lines = 0;
+  this.eaten.curLn = '';
+  this.eaten.lnCnt = 0;
   this.buf = String(text || '');
   this.name = '';
   this.maxPeek = 1024;
@@ -126,14 +134,27 @@ PT.filterIfFunc = function (text, maybeFunc) {
 
 PT.eat = function () {
   if (this.peekPos < 1) { return ''; }
-  var eaten = this.buf.slice(0, this.peekPos), lnCnt = 0;
+  var afterLineFeed = false, eaten = this.eaten, lnCnt = 0,
+    chunk = this.buf.slice(0, this.peekPos);
   this.buf = this.buf.slice(this.peekPos);
   this.peekPos = 0;
-  this.eaten.push(eaten);
-  eaten.replace(/\n/g, function () { lnCnt += 1; });
-  if (lnCnt) { this.eaten.lines = +(this.eaten.lines || 0) + lnCnt; }
-  return eaten;
+  eaten.push(chunk);
+  chunk.replace(/\n+/g, function (lns, idx) {
+    lns = lns.length;
+    lnCnt += lns;
+    afterLineFeed = idx + lns;
+  });
+  if (lnCnt) {
+    eaten.lnCnt = +(eaten.lnCnt || 0) + lnCnt;
+    eaten.curLn = chunk.slice(afterLineFeed);
+  } else {
+    eaten.curLn += chunk;
+  }
+  return chunk;
 };
+
+
+PT.ruminateCurrentLine = function () { return this.eaten.curLn; };
 
 
 PT.matchMark = function (mark) {
@@ -180,13 +201,8 @@ PT.willDrain = function (doit) {
 
 
 PT.calcPosLnChar = function () {
-  var eaten = this.eaten, ln = eaten.lines, ch = 0,
-    crntLine = eaten[eaten.length - 1];
-  if (crntLine) {
-    crntLine = crntLine.split(/\n/);
-    crntLine = crntLine[crntLine.length - 1];
-  }
-  if (crntLine) { ch += this.strlen_chars(crntLine); }
+  var eaten = this.eaten, ln = eaten.lnCnt, ch = this.eaten.curLn;
+  ch = (ch ? this.strlen_chars(ch) : 0);
   eaten = [ln, ch];
   eaten.ln = ln;
   eaten.ch = ch;
