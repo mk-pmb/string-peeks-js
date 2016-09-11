@@ -45,7 +45,7 @@ function slashSlots(m) {
 PT.toString = function () {
   var remain = this.buf.length;
   return '['.concat(this.constructor.name, (remain === 0 ? ', empty'
-    : [' +', remain, ': ', this.buf.slice(0, 32)]), ']');
+    : (' +' + remain + ': ' + this.buf.slice(0, 32))), ']');
 };
 
 
