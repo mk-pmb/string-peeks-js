@@ -1,5 +1,5 @@
 { "name": "string-peeks",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Peek into start of a string, remeber how much you've peeked, and discard that part. Also knows some tricks about angle brackets.",
   "keywords": [
     "angle brackets",
@@ -20,8 +20,6 @@
   "bugs": {
     "url": "https://github.com/mk-pmb/string-peeks-js/issues"
   },
-
-  "config": { "for_details": "see npm-config2env-datatypes-demo" },
 
   "private": false, "license": "ISC",
 

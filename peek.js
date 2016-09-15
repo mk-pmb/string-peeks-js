@@ -10,20 +10,25 @@ function arrLast(arr) { return arr[arr.length - 1]; }
 
 
 CF = function StringPeeksTextBuffer(text, opts) {
-  this.byteOrderMark = '';
-  switch (text[0]) {
-  case CF.utf8ent.byteOrderMark:
-    this.byteOrderMark = text[0];
-    text = text.slice(1);
-    break;
+  var clone = (text instanceof CF);
+  if (clone) {
+    Object.assign(this, text);
+  } else {
+    this.byteOrderMark = '';
+    this.buf = String(text || '');
+    switch (this.buf[0]) {
+    case CF.utf8ent.byteOrderMark:
+      this.byteOrderMark = this.buf[0];
+      this.buf = this.buf.slice(1);
+      break;
+    }
+    this.name = '';
+    this.maxPeek = 1024;
+    this.peekPos = 0;
   }
-  this.eaten = [];
-  this.eaten.curLn = '';
-  this.eaten.lnCnt = 0;
-  this.buf = String(text || '');
-  this.name = '';
-  this.maxPeek = 1024;
-  this.peekPos = 0;
+  this.eaten = (clone ? text.eaten.slice(0) : []);
+  this.eaten.curLn = (clone ? text.eaten.curLn : '');
+  this.eaten.lnCnt = (clone ? text.eaten.lnCnt : 0);
   Object.assign(this, opts);
 };
 PT = CF.prototype;
@@ -35,11 +40,16 @@ CF.utf8ent = {
 CF.rgxAllSurrogatePairs = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
 
 
-function slashSlots(m) {
-  var slot = this[m[1]];
-  if (slot !== undefined) { return slot; }
-  return JSON.parse('"' + m + '"');
+function slashSlots(tpl, data) {
+  return String(tpl).replace(/(\\+)([A-Za-z])([0-9a-fA-F]{0,4})/g,
+    slashSlots.rpl.bind(data));
 }
+slashSlots.rpl = function (m, sl, ch, hex) {
+  ch = this[ch];
+  if ((sl.length % 2) === 0) { ch = undefined; }
+  if (ch === undefined) { return JSON.parse('"' + m + '"'); }
+  return sl.substr(0, (sl.length - 1) / 2) + ch + hex;
+};
 
 
 PT.toString = function () {
@@ -49,6 +59,7 @@ PT.toString = function () {
 };
 
 
+PT.clone = function () { return new CF(this); };
 PT.isEmpty = function () { return (this.buf.length <= 0); };
 PT.notEmpty = function () { return (this.buf.length > 0); };
 
@@ -70,26 +81,46 @@ PT.filerIfFunc = function (data, func) {
 };
 
 
+PT.matchMark = function (mark) {
+  var found;
+  switch (typeof mark) {
+  case 'number':
+    found = ((mark >= 0) && (mark <= this.buf.length));
+    if (found) { found = Object.assign([''], { index: mark }); }
+    return found;
+  case 'string':
+    found = this.buf.indexOf(mark);
+    if (found < 0) { return false; }
+    return Object.assign([mark], { index: found });
+  }
+  if (isRgx(mark)) { return (this.buf.match(mark) || false); }
+  throw new Error('unsupported mark type: ' + String(mark && typeof mark));
+};
+
+
 PT.peekMark = function (mark, ifNotFound, preprocess) {
   var win = this.peekWin();
   if (mark === '') {
     this.peekPos = win.length;
     return win;
   }
-  mark = (isRgx(mark) ? win.search(mark) : win.indexOf(mark));
-  if (mark < 0) {
-    this.peekPos = 0;
-    win = ifNotFound;
-  } else {
+  mark = this.matchMark(mark);
+  if (mark) {
+    mark = mark.index + mark[0].length;
     this.peekPos = mark;
     win = win.slice(0, mark);
+  } else {
+    this.peekPos = 0;
+    win = ifNotFound;
   }
   win = this.filterIfFunc(win, preprocess);
   return win;
 };
 
 
+PT.peekRemainder = function () { return this.buf; };
 PT.peekLine = function (ifNF, pre) { return this.peekMark('\n', ifNF, pre); };
+PT.eatLine = function () { return (this.peekLine() && this.eat()); };
 
 
 PT.peekTagRgx = /^[\n\s]*<([\x00-;=\?-\uFFFF]+)>/;
@@ -157,23 +188,6 @@ PT.eat = function () {
 PT.ruminateCurrentLine = function () { return this.eaten.curLn; };
 
 
-PT.matchMark = function (mark) {
-  var found;
-  switch (typeof mark) {
-  case 'number':
-    found = ((mark >= 0) && (mark <= this.buf.length));
-    if (found) { found = Object.assign([''], { index: mark }); }
-    return found;
-  case 'string':
-    found = this.buf.indexOf(mark);
-    if (found < 0) { return false; }
-    return Object.assign([mark], { index: found });
-  }
-  if (isRgx(mark)) { return (this.buf.match(mark) || false); }
-  throw new Error('unsupported mark type: ' + String(mark && typeof mark));
-};
-
-
 PT.eatUntilMarkOrEnd = function (mark, digest) {
   var found = this.matchMark(mark), eaten;
   this.peekPos = (found ? found.index : this.buf.length);
@@ -200,14 +214,21 @@ PT.willDrain = function (doit) {
 };
 
 
+CF.StringPeeksLineColumnPosition = (function (bpc, bpt) {
+  bpc = function StringPeeksBufferPosition(ln, ch) {
+    this.ln = ln;
+    this.ch = ch;
+  };
+  bpt = bpc.prototype;
+  bpt.fmt = function () { return PT.posFmt(this); };
+  return bpc;
+}());
+
+
 PT.calcPosLnChar = function () {
   var eaten = this.eaten, ln = eaten.lnCnt, ch = this.eaten.curLn;
   ch = (ch ? this.strlen_chars(ch) : 0);
-  eaten = [ln, ch];
-  eaten.ln = ln;
-  eaten.ch = ch;
-  eaten.fmt = this.posFmt.bind(this, eaten);
-  return eaten;
+  return new CF.StringPeeksLineColumnPosition(ln, ch);
 };
 
 
@@ -222,10 +243,10 @@ PT.posFmt = function (pos) {
   }
   fmt = (fmt && this['posFmt' + fmt]);
   if (!fmt) { return JSON.stringify(pos); }
-  return fmt.replace(/\\[LC]/g, slashSlots.bind({
+  return slashSlots(fmt, {
     L: pos.ln + this.posFmtNumStart,
     C: pos.ch + this.posFmtNumStart,
-  }));
+  });
 };
 
 
