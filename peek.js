@@ -3,10 +3,12 @@
 'use strict';
 
 var CF, PT;
-function isNum(x) { return ((typeof x) === 'number'); }
 function isFunc(x) { return ((typeof x) === 'function'); }
+function isNum(x) { return ((typeof x) === 'number'); }
 function isRgx(x) { return (x instanceof RegExp); }
+function isStr(x) { return ((typeof x) === 'string'); }
 function arrLast(arr) { return arr[arr.length - 1]; }
+function eq(x, y) { return (x === y); }
 
 
 CF = function StringPeeksTextBuffer(text, opts) {
@@ -38,6 +40,7 @@ CF.utf8ent = {
   latinSmallFWithHook: '\u0192', // "ƒ"
 };
 CF.rgxAllSurrogatePairs = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+CF.quot = function (x) { return (isStr(x) ? '"' + x + '"' : String(x)); };
 
 
 function slashSlots(tpl, data) {
@@ -122,8 +125,19 @@ PT.peekRemainder = function () { return this.buf; };
 PT.peekLine = function (ifNF, pre) { return this.peekMark('\n', ifNF, pre); };
 PT.eatLine = function () { return (this.peekLine() && this.eat()); };
 
+PT.eatLinesBeforeMark = function (mark) {
+  var eaten = '', ln;
+  if (isStr(mark)) { mark = { exec: eq.bind(null, mark + '\n') }; }
+  while (true) {
+    ln = this.peekLine();
+    if (!ln) { throw new Error('Cannot find end mark ' + CF.quot(mark)); }
+    if (mark.exec(ln)) { return eaten; }
+    eaten += this.eat();
+  }
+};
 
-PT.peekTagRgx = /^[\n\s]*<([\x00-;=\?-\uFFFF]+)>/;
+
+PT.peekTagRgx = /^\s*<([\x00-;=\?-\uFFFF]+)>/;
 PT.peekTag = function (tagContentRgx, preprocess) {
   var tag = (this.peekWin().match(this.peekTagRgx) || false), match = false;
   this.peekPos = 0;
@@ -134,7 +148,7 @@ PT.peekTag = function (tagContentRgx, preprocess) {
       match = tagContentRgx.exec(tag[1]);
       if (match) {
         (function (inner, attr) {
-          attr = inner.match(/^(\S+)[\s\n]+/);
+          attr = inner.match(/^(\S+)\s+/);
           match.tagName = (attr ? attr[1] : inner);
           match.attr = (attr ? inner.subtr(attr[0].length, inner.length) : '');
           match.after = inner.slice(match[0].length);
@@ -207,7 +221,7 @@ PT.willDrain = function (doit) {
   var result = doit(this);
   if (this.isEmpty()) { return result; }
   doit = String(doit).replace(/^function\s+/, CF.utf8ent.latinSmallFWithHook
-    ).replace(/[\s\n]+/g, ' ').substr(0, 32);
+    ).replace(/\s+/g, ' ').substr(0, 32);
   doit += '; leftover string[' + this.buf.length + '] ' +
     JSON.stringify(this.buf.substr(0, 128));
   throw new Error('Function failed to drain buffer: ' + doit);
