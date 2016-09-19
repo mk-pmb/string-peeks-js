@@ -147,11 +147,12 @@ PT.peekTag = function (tagContentRgx, preprocess) {
     if (isRgx(tagContentRgx)) {
       match = tagContentRgx.exec(tag[1]);
       if (match) {
-        (function (inner, attr) {
-          attr = inner.match(/^(\S+)\s+/);
+        (function (inner) {
+          var attr = inner.match(/^(\S+)(?:\s+|\/?$)/);
           match.tagName = (attr ? attr[1] : inner);
-          match.attr = (attr ? inner.subtr(attr[0].length, inner.length) : '');
           match.after = inner.slice(match[0].length);
+          match.attr = (attr ? inner.slice(attr[0].length) : '');
+          // ^-- redundant iff the tagContentRgx matched the same text as attr
         }(tag[1]));
       } else {
         match = false;
@@ -159,13 +160,15 @@ PT.peekTag = function (tagContentRgx, preprocess) {
       }
     }
   }
-  if (preprocess === Error) {
+  switch (preprocess) {
+  case '||err':
     if (!match) {
       tag = 'any tag';
       if (isRgx(tagContentRgx)) { tag = 'a tag like ' + String(tagContentRgx); }
-      throw new Error('Expected ' + tag);
+      throw new Error('Expected ' + tag + ' @ ' + this.calcPosLnChar().fmt());
     }
     preprocess = null;
+    break;
   }
   match = this.filterIfFunc(match, preprocess);
   return match;

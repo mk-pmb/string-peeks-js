@@ -1,5 +1,5 @@
 { "name": "string-peeks",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Peek into start of a string, remeber how much you've peeked, and discard that part. Also knows some tricks about angle brackets.",
   "keywords": [
     "angle brackets",
