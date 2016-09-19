@@ -102,14 +102,18 @@ PT.matchMark = function (mark) {
 
 
 PT.peekMark = function (mark, ifNotFound, preprocess) {
-  var win = this.peekWin();
+  var win = this.peekWin(), includeMark = true;
   if (mark === '') {
     this.peekPos = win.length;
     return win;
   }
+  if (((mark && typeof mark) === 'object') && mark.mark) {
+    if ((typeof mark.inc) === 'boolean') { includeMark = mark.inc; }
+    mark = mark.mark;
+  }
   mark = this.matchMark(mark);
   if (mark) {
-    mark = mark.index + mark[0].length;
+    mark = mark.index + (includeMark ? mark[0].length : 0);
     this.peekPos = mark;
     win = win.slice(0, mark);
   } else {
