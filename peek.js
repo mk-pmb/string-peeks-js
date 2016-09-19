@@ -231,6 +231,7 @@ PT.willDrain = function (doit) {
     ).replace(/\s+/g, ' ').substr(0, 32);
   doit += '; leftover string[' + this.buf.length + '] ' +
     JSON.stringify(this.buf.substr(0, 128));
+  doit += ' @ ' + this.calcPosLnChar().fmt();
   throw new Error('Function failed to drain buffer: ' + doit);
 };
 
