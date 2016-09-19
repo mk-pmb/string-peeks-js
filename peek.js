@@ -242,7 +242,7 @@ CF.StringPeeksLineColumnPosition = (function (bpc, bpt) {
     this.ch = ch;
   };
   bpt = bpc.prototype;
-  bpt.fmt = function () { return PT.posFmt(this); };
+  bpt.toString = bpt.fmt = function () { return PT.posFmt(this); };
   return bpc;
 }());
 
