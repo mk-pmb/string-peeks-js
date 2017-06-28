@@ -41,6 +41,11 @@ CF.utf8ent = {
 };
 CF.rgxAllSurrogatePairs = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
 CF.quot = function (x) { return (isStr(x) ? '"' + x + '"' : String(x)); };
+CF.fromText = function (t) { return new CF(String(t)); };
+
+CF.fromBuffer = function (b, enc) {
+  return new CF(b.toString(enc || 'binary'));
+};
 
 
 function slashSlots(tpl, data) {
