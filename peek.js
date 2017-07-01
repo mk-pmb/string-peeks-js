@@ -2,49 +2,60 @@
 /* -*- tab-width: 2 -*- */
 'use strict';
 
-var CF, PT;
-function isFunc(x) { return ((typeof x) === 'function'); }
+var EX = {}, CF, PT;
+function ifFun(x, d) { return ((typeof x) === 'function' ? x : d); }
 function isNum(x) { return ((typeof x) === 'number'); }
 function isRgx(x) { return (x instanceof RegExp); }
 function isStr(x) { return ((typeof x) === 'string'); }
+function ifObj(x, d) { return ((x && typeof x) === 'object' ? x : d); }
 function arrLast(arr) { return arr[arr.length - 1]; }
 function eq(x, y) { return (x === y); }
 
 
-CF = function StringPeeksTextBuffer(text, opts) {
-  var clone = (text instanceof CF);
+CF = function StringPeeksTextBuffer(text, opt) {
+  var spBuf = this, clone = (text instanceof CF), bom;
+  opt = (opt || false);
   if (clone) {
-    Object.assign(this, text);
+    Object.assign(spBuf, text);
   } else {
-    this.byteOrderMark = '';
-    this.buf = String(text || '');
-    switch (this.buf[0]) {
-    case CF.utf8ent.byteOrderMark:
-      this.byteOrderMark = this.buf[0];
-      this.buf = this.buf.slice(1);
-      break;
+    spBuf.name = '';
+    text = String(text || '');
+    spBuf.byteOrderMark = '';
+    if (!opt.bomIsData) {
+      bom = (text.match(EX.utf8ent.byteOrderMark_any_rgx) || false)[0];
+      if (bom) {
+        spBuf.byteOrderMark = bom;
+        text = text.slice(bom.length);
+      }
     }
-    this.name = '';
-    this.maxPeek = 1024;
-    this.peekPos = 0;
+    spBuf.buf = text;
+    spBuf.maxPeek = 1024;
+    spBuf.peekPos = 0;
   }
-  this.eaten = (clone ? text.eaten.slice(0) : []);
-  this.eaten.curLn = (clone ? text.eaten.curLn : '');
-  this.eaten.lnCnt = (clone ? text.eaten.lnCnt : 0);
-  Object.assign(this, opts);
+  spBuf.eaten = (clone ? text.eaten.slice(0) : []);
+  spBuf.eaten.curLn = (clone ? text.eaten.curLn : '');
+  spBuf.eaten.lnCnt = (clone ? text.eaten.lnCnt : 0);
+  spBuf.eaten.offset = (clone ? text.eaten.offset : 0);
+  Object.assign(spBuf, opt);
 };
 PT = CF.prototype;
 
-CF.utf8ent = {
+EX.utf8ent = {
   byteOrderMark: '\uFEFF',
+  byteOrderMark_latin1: '\xEF\xBB\xBF',
+  byteOrderMark_any_rgx: /^(?:\uFEFF|\xEF\xBB\xBF)/,
   latinSmallFWithHook: '\u0192', // "ƒ"
 };
-CF.rgxAllSurrogatePairs = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
-CF.quot = function (x) { return (isStr(x) ? '"' + x + '"' : String(x)); };
-CF.fromText = function (t) { return new CF(String(t)); };
 
-CF.fromBuffer = function (b, enc) {
-  return new CF(b.toString(enc || 'binary'));
+EX.rgxAllSurrogatePairs = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+EX.quot = function (x) { return (isStr(x) ? '"' + x + '"' : String(x)); };
+
+EX.fromText = function (t, opt) { return new CF(t, opt); };
+
+EX.fromBuffer = function (b, opt) {
+  opt = (opt || false);
+  if (typeof opt === 'string') { opt = { encoding: opt }; }
+  return new CF(b.toString(opt.encoding || 'binary'), opt);
 };
 
 
@@ -71,21 +82,16 @@ PT.clone = function () { return new CF(this); };
 PT.isEmpty = function () { return (this.buf.length <= 0); };
 PT.notEmpty = function () { return (this.buf.length > 0); };
 
-PT.strlen_bytes = function strlen_bytes(x) { return Buffer.byteLength(x); };
-PT.strlen_ucs2  = function strlen_ucs2(x) { return String(x).length; };
-PT.strlen_chars = function strlen_chars(x) {
-  return String(x).replace(CF.rgxAllSurrogatePairs).length;
+
+PT.filterIfFunc = function (func, data) {
+  if (!ifFun(func)) { return data; }
+  return func.apply(this, Array.prototype.slice.call(arguments, 1));
 };
 
 
 PT.peekWin = function () {
-  if (this.isEmpty()) { throw new Error('unexpected end of input'); }
+  if (this.isEmpty()) { this.fail('unexpected end of input'); }
   return (this.maxPeek ? this.buf.slice(0, this.maxPeek) : this.buf);
-};
-
-
-PT.filerIfFunc = function (data, func) {
-  return (isFunc(func) ? func.call(this, data) : data);
 };
 
 
@@ -106,26 +112,35 @@ PT.matchMark = function (mark) {
 };
 
 
+PT.peekChars = function (nChars) {
+  // less fancy version of .peekMark(nChars)
+  if (this.buf.length < nChars) { return false; }
+  var found = this.buf.slice(0, nChars);
+  this.peekPos += found.length;
+  return found;
+};
+
+
 PT.peekMark = function (mark, ifNotFound, preprocess) {
-  var win = this.peekWin(), includeMark = true;
+  var win = this.peekWin(), includeMark = true, found, endpos;
   if (mark === '') {
     this.peekPos = win.length;
     return win;
   }
-  if (((mark && typeof mark) === 'object') && mark.mark) {
+  if (ifObj(mark, false).mark) {
     if ((typeof mark.inc) === 'boolean') { includeMark = mark.inc; }
     mark = mark.mark;
   }
-  mark = this.matchMark(mark);
-  if (mark) {
-    mark = mark.index + (includeMark ? mark[0].length : 0);
-    this.peekPos = mark;
-    win = win.slice(0, mark);
+  found = this.matchMark(mark);
+  if (found) {
+    endpos = found.index + (includeMark ? found[0].length : 0);
+    this.peekPos = endpos;
+    win = win.slice(0, endpos);
   } else {
     this.peekPos = 0;
     win = ifNotFound;
   }
-  win = this.filterIfFunc(win, preprocess);
+  win = this.filterIfFunc(preprocess, win, mark);
   return win;
 };
 
@@ -134,13 +149,13 @@ PT.peekRemainder = function () { return this.buf; };
 PT.peekLine = function (ifNF, pre) { return this.peekMark('\n', ifNF, pre); };
 PT.eatLine = function () { return (this.peekLine() && this.eat()); };
 
+
 PT.eatLinesBeforeMark = function (mark) {
-  var eaten = '', ln;
+  var eaten = '';
   if (isStr(mark)) { mark = { exec: eq.bind(null, mark + '\n') }; }
   while (true) {
-    ln = this.peekLine();
-    if (!ln) { throw new Error('Cannot find end mark ' + CF.quot(mark)); }
-    if (mark.exec(ln)) { return eaten; }
+    if (this.isEmpty()) { this.fail('Cannot find end mark ' + EX.quot(mark)); }
+    if (mark.exec(this.peekLine())) { return eaten; }
     eaten += this.eat();
   }
 };
@@ -174,23 +189,19 @@ PT.peekTag = function (tagContentRgx, preprocess) {
     if (!match) {
       tag = 'any tag';
       if (isRgx(tagContentRgx)) { tag = 'a tag like ' + String(tagContentRgx); }
-      throw new Error('Expected ' + tag + ' @ ' + this.calcPosLnChar().fmt());
+      this.fail('Expected ' + tag);
     }
     preprocess = null;
     break;
   }
-  match = this.filterIfFunc(match, preprocess);
+  match = this.filterIfFunc(preprocess, match);
   return match;
-};
-
-
-PT.filterIfFunc = function (text, maybeFunc) {
-  return (isFunc(maybeFunc) ? maybeFunc(text) : text);
 };
 
 
 PT.eat = function () {
   if (this.peekPos < 1) { return ''; }
+  this.eaten.offset += this.peekPos;
   var afterLineFeed = false, eaten = this.eaten, lnCnt = 0,
     chunk = this.buf.slice(0, this.peekPos);
   this.buf = this.buf.slice(this.peekPos);
@@ -214,14 +225,22 @@ PT.eat = function () {
 PT.ruminateCurrentLine = function () { return this.eaten.curLn; };
 
 
-PT.eatUntilMarkOrEnd = function (mark, digest) {
-  var found = this.matchMark(mark), eaten;
-  this.peekPos = (found ? found.index : this.buf.length);
-  eaten = this.eat();
-  if (eaten) {
-    if (Array.isArray(digest)) { digest[digest.length] = eaten; }
+PT.eatUntilMarkOrEnd = function (mark, opt) {
+  if (opt && Array.isArray(opt) && (opt.collect === undefined)) {
+    throw new Error('API changed: ' +
+      'An Array as opt is ambiguous without a .collect property.');
   }
-  if ((typeof digest) === 'function') {
+  opt = (opt || false);
+  if (ifFun(opt)) { opt = { digest: opt }; }
+  var found = this.matchMark(mark), eaten, digest = opt.digest;
+  if (found) {
+    this.peekPos = found.index + (opt.eatMark === false ? 0 : found[0].length);
+  } else {
+    this.peekPos = this.buf.length;
+  }
+  eaten = this.eat();
+  if (eaten && opt.collect) { opt.collect.push(eaten); }
+  if (digest) {
     eaten = digest(eaten, found, this);
     if (eaten !== undefined) { found = eaten; }
   }
@@ -229,51 +248,90 @@ PT.eatUntilMarkOrEnd = function (mark, digest) {
 };
 
 
-PT.willDrain = function (doit) {
-  var result = doit(this);
-  if (this.isEmpty()) { return result; }
-  doit = String(doit).replace(/^function\s+/, CF.utf8ent.latinSmallFWithHook
-    ).replace(/\s+/g, ' ').substr(0, 32);
-  doit += '; leftover string[' + this.buf.length + '] ' +
-    JSON.stringify(this.buf.substr(0, 128));
-  doit += ' @ ' + this.calcPosLnChar().fmt();
-  throw new Error('Function failed to drain buffer: ' + doit);
+PT.fail = function (why) {
+  throw new Error(why +  ' @ ' + this.calcPosLnChar().fmt());
 };
 
 
-CF.StringPeeksLineColumnPosition = (function (bpc, bpt) {
-  bpc = function StringPeeksBufferPosition(ln, ch) {
-    this.ln = ln;
-    this.ch = ch;
+PT.willDrain = function (doit) {
+  var result = doit(this);
+  if (this.isEmpty()) { return result; }
+  doit = String(doit).replace(/^function\s+/, EX.utf8ent.latinSmallFWithHook
+    ).replace(/\s+/g, ' ').substr(0, 32);
+  this.fail('Function failed to drain buffer: ' + doit +
+    '; leftover string[' + this.buf.length + '] ' +
+    JSON.stringify(this.buf.substr(0, 128)));
+};
+
+
+CF.StringPeeksLineColumnPosition = (function (bpc) {
+  bpc = function StringPeeksBufferPosition(spBuf) {
+    var eaten = spBuf.eaten;
+    this.ln = eaten.lnCnt;
+    this.ch = eaten.curLn.length;
+    this.offset = eaten.offset;
+    this.toString = this.fmt = function () { return spBuf.posFmt(this); };
   };
-  bpt = bpc.prototype;
-  bpt.toString = bpt.fmt = function () { return PT.posFmt(this); };
   return bpc;
 }());
 
 
 PT.calcPosLnChar = function () {
-  var eaten = this.eaten, ln = eaten.lnCnt, ch = this.eaten.curLn;
-  ch = (ch ? this.strlen_chars(ch) : 0);
-  return new CF.StringPeeksLineColumnPosition(ln, ch);
+  return new CF.StringPeeksLineColumnPosition(this);
 };
 
 
 PT.posFmtLn = 'line \\L';
+PT.posFmtLnOf = 'line \\L (offset \\@)';
 PT.posFmtLnCh = 'line \\L char \\C';
+PT.posFmtLnOf = 'line \\L char \\C (offset \\@)';
 PT.posFmtNumStart = 1;
 PT.posFmt = function (pos) {
   var fmt;
   if (isNum(pos.ln)) {
     fmt = 'Ln';
     if (isNum(pos.ch)) { fmt += 'Ch'; }
+    if (isNum(pos.offset)) { fmt += 'Of'; }
   }
   fmt = (fmt && this['posFmt' + fmt]);
   if (!fmt) { return JSON.stringify(pos); }
   return slashSlots(fmt, {
     L: pos.ln + this.posFmtNumStart,
     C: pos.ch + this.posFmtNumStart,
+    '@': pos.offset,
   });
+};
+
+
+PT.rangeStartPos = function (r) {
+  var eaten = this.eaten;
+  if (!r) { r = {}; }
+  r.startOffset = eaten.offset;
+  r.startLine = eaten.lnCnt;
+  return r;
+};
+
+
+PT.rangeEndPos = function (r) {
+  var eaten = this.eaten;
+  if (!r) { r = {}; }
+  r.endOffset = eaten.offset;
+  r.endLine = eaten.lnCnt;
+  r.lenChars = r.endOffset - (+r.startOffset || 0);
+  r.lenLines = r.endLine - (+r.startLine || 0);
+  return r;
+};
+
+
+PT.anomaly = function (id, details) {
+  var accept = (this.acceptAnomalies || false)[id],
+    descr = (this.anomalyDescrs || false);
+  if (ifFun(accept)) { accept = accept.call(this, id, details); }
+  if (accept === true) { return; }
+  descr = (descr[id] || descr[''] || '');
+  if (descr) { descr = ' (' + descr + ')'; }
+  details = JSON.stringify(details, null, 2).replace(/\n */g, ' ');
+  this.fail('Anomaly ' + id + descr + ': ' + details);
 };
 
 
@@ -291,4 +349,5 @@ PT.posFmt = function (pos) {
 
 
 
-module.exports = CF;
+
+module.exports = EX;
