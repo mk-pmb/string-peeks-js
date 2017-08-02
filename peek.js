@@ -29,7 +29,6 @@ CF = function StringPeeksTextBuffer(text, opt) {
       }
     }
     spBuf.buf = text;
-    spBuf.maxPeek = 1024;
     spBuf.peekPos = 0;
   }
   spBuf.eaten = (clone ? text.eaten.slice(0) : []);
@@ -89,59 +88,55 @@ PT.filterIfFunc = function (func, data) {
 };
 
 
-PT.peekWin = function () {
-  if (this.isEmpty()) { this.fail('unexpected end of input'); }
-  return (this.maxPeek ? this.buf.slice(0, this.maxPeek) : this.buf);
-};
-
-
 PT.matchMark = function (mark) {
-  var found;
+  var found, buf = this.buf;
   switch (typeof mark) {
   case 'number':
-    found = ((mark >= 0) && (mark <= this.buf.length));
+    found = ((mark >= 0) && (mark <= buf.length));
     if (found) { found = Object.assign([''], { index: mark }); }
     return found;
   case 'string':
-    found = this.buf.indexOf(mark);
+    if (!mark) { return false; }
+    found = buf.indexOf(mark);
     if (found < 0) { return false; }
     return Object.assign([mark], { index: found });
   }
-  if (isRgx(mark)) { return (this.buf.match(mark) || false); }
+  if (isRgx(mark)) { return (buf.match(mark) || false); }
   throw new Error('unsupported mark type: ' + String(mark && typeof mark));
 };
 
 
 PT.peekChars = function (nChars) {
   // less fancy version of .peekMark(nChars)
-  if (this.buf.length < nChars) { return false; }
-  var found = this.buf.slice(0, nChars);
-  this.peekPos += found.length;
-  return found;
+  var tx = this.buf.slice(0, nChars);
+  if (tx.length !== nChars) { return false; }
+  this.peekPos += nChars;
+  return tx;
+};
+
+
+PT.eatChars = function () {
+  return (this.peekChars.apply(this, arguments) && this.eat());
 };
 
 
 PT.peekMark = function (mark, ifNotFound, preprocess) {
-  var win = this.peekWin(), includeMark = true, found, endpos;
-  if (mark === '') {
-    this.peekPos = win.length;
-    return win;
-  }
-  if (ifObj(mark, false).mark) {
+  var includeMark = true, found, endpos, tx;
+  if (ifObj(mark)) {
     if ((typeof mark.inc) === 'boolean') { includeMark = mark.inc; }
-    mark = mark.mark;
+    mark = (mark.mark || mark.rgx || mark);
   }
   found = this.matchMark(mark);
   if (found) {
     endpos = found.index + (includeMark ? found[0].length : 0);
     this.peekPos = endpos;
-    win = win.slice(0, endpos);
+    tx = this.buf.slice(0, endpos);
   } else {
     this.peekPos = 0;
-    win = ifNotFound;
+    tx = ifNotFound;
   }
-  win = this.filterIfFunc(preprocess, win, mark);
-  return win;
+  tx = this.filterIfFunc(preprocess, tx, found);
+  return tx;
 };
 
 
@@ -163,7 +158,7 @@ PT.eatLinesBeforeMark = function (mark) {
 
 PT.peekTagRgx = /^\s*<([\x00-;=\?-\uFFFF]+)>/;
 PT.peekTag = function (tagContentRgx, preprocess) {
-  var tag = (this.peekWin().match(this.peekTagRgx) || false), match = false;
+  var tag = (this.peekTagRgx.exec(this.buf) || false), match = false;
   this.peekPos = 0;
   if (tag) {
     match = tag[1];
@@ -242,7 +237,8 @@ PT.eatUntilMarkOrEnd = function (mark, opt) {
   if (eaten && opt.collect) { opt.collect.push(eaten); }
   if (digest) {
     eaten = digest(eaten, found, this);
-    if (eaten !== undefined) { found = eaten; }
+    // => to retrieve `eaten`, digest with `String` or the identity function.
+    if (eaten !== undefined) { return eaten; }
   }
   return found;
 };
@@ -330,7 +326,13 @@ PT.anomaly = function (id, details) {
   if (accept === true) { return; }
   descr = (descr[id] || descr[''] || '');
   if (descr) { descr = ' (' + descr + ')'; }
-  details = JSON.stringify(details, null, 2).replace(/\n */g, ' ');
+  if (details === undefined) {
+    details = (this.isEmpty() ? 'at end of input'
+      : 'next up: ' + JSON.stringify(this.buf.slice(0, 32)));
+  } else {
+    details = (JSON.stringify(details, null, 2)
+      || String(details)).replace(/\n */g, ' ');
+  }
   this.fail('Anomaly ' + id + descr + ': ' + details);
 };
 
