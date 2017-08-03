@@ -9,7 +9,7 @@ function isRgx(x) { return (x instanceof RegExp); }
 function isStr(x) { return ((typeof x) === 'string'); }
 function ifObj(x, d) { return ((x && typeof x) === 'object' ? x : d); }
 function arrLast(arr) { return arr[arr.length - 1]; }
-function eq(x, y) { return (x === y); }
+function chkEq(y) { return function (x) { return (x === y); }; }
 
 
 CF = function StringPeeksTextBuffer(text, opt) {
@@ -84,7 +84,8 @@ PT.notEmpty = function () { return (this.buf.length > 0); };
 
 PT.filterIfFunc = function (func, data) {
   if (!ifFun(func)) { return data; }
-  return func.apply(this, Array.prototype.slice.call(arguments, 1));
+  return func.apply(this, Array.prototype.slice.call(arguments, 1
+    ).concat(this));  // final "this" is to support bound functions
 };
 
 
@@ -147,7 +148,7 @@ PT.eatLine = function () { return (this.peekLine() && this.eat()); };
 
 PT.eatLinesBeforeMark = function (mark) {
   var eaten = '';
-  if (isStr(mark)) { mark = { exec: eq.bind(null, mark + '\n') }; }
+  if (isStr(mark)) { mark = { exec: chkEq(mark + '\n') }; }
   while (true) {
     if (this.isEmpty()) { this.fail('Cannot find end mark ' + EX.quot(mark)); }
     if (mark.exec(this.peekLine())) { return eaten; }
@@ -225,6 +226,7 @@ PT.eatUntilMarkOrEnd = function (mark, opt) {
     throw new Error('API changed: ' +
       'An Array as opt is ambiguous without a .collect property.');
   }
+  if (mark === null) { mark = (opt.rgx || opt.mark); }
   opt = (opt || false);
   if (ifFun(opt)) { opt = { digest: opt }; }
   var found = this.matchMark(mark), eaten, digest = opt.digest;
@@ -236,8 +238,10 @@ PT.eatUntilMarkOrEnd = function (mark, opt) {
   eaten = this.eat();
   if (eaten && opt.collect) { opt.collect.push(eaten); }
   if (digest) {
-    eaten = digest(eaten, found, this);
-    // => to retrieve `eaten`, digest with `String` or the identity function.
+    eaten = digest.call(this, eaten,
+      // => To retrieve `eaten`, digest with `String` or the identity function.
+      found,
+      this);  // Final "this" is to support bound functions
     if (eaten !== undefined) { return eaten; }
   }
   return found;
