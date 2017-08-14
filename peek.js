@@ -109,7 +109,7 @@ PT.matchMark = function (mark) {
 
 PT.peekChars = function (nChars) {
   // less fancy version of .peekMark(nChars)
-  var tx = this.buf.slice(0, nChars);
+  var buf = this.buf, tx = (nChars < buf.length ? buf.slice(0, nChars) : buf);
   if (tx.length !== nChars) { return false; }
   this.peekPos += nChars;
   return tx;
@@ -141,7 +141,11 @@ PT.peekMark = function (mark, ifNotFound, preprocess) {
 };
 
 
-PT.peekRemainder = function () { return this.buf; };
+PT.peekRemainder = function () {
+  this.peekPos = this.buf.length;
+  return this.buf;
+};
+
 PT.peekLine = function (ifNF, pre) { return this.peekMark('\n', ifNF, pre); };
 PT.eatLine = function () { return (this.peekLine() && this.eat()); };
 
