@@ -258,13 +258,17 @@ PT.fail = function (why) {
 
 
 PT.willDrain = function (doit) {
-  var result = doit(this);
-  if (this.isEmpty()) { return result; }
-  doit = String(doit).replace(/^function\s+/, EX.utf8ent.latinSmallFWithHook
-    ).replace(/\s+/g, ' ').substr(0, 32);
-  this.fail('Function failed to drain buffer: ' + doit +
-    '; leftover string[' + this.buf.length + '] ' +
-    JSON.stringify(this.buf.substr(0, 128)));
+  var self = this, result = doit(self);
+  function verifyEmpty() {
+    if (self.isEmpty()) { return result; }
+    doit = String(doit).replace(/^function\s+/, EX.utf8ent.latinSmallFWithHook
+      ).replace(/\s+/g, ' ').substr(0, 32);
+    self.fail('Function failed to drain buffer: ' + doit +
+      '; leftover string[' + self.buf.length + '] ' +
+      JSON.stringify(self.buf.substr(0, 128)));
+  }
+  if (ifFun(result.then)) { return result.then(verifyEmpty); }
+  return verifyEmpty();
 };
 
 
