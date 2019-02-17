@@ -267,7 +267,7 @@ PT.willDrain = function (doit) {
       '; leftover string[' + self.buf.length + '] ' +
       JSON.stringify(self.buf.substr(0, 128)));
   }
-  if (ifFun(result.then)) { return result.then(verifyEmpty); }
+  if (result && ifFun(result.then)) { return result.then(verifyEmpty); }
   return verifyEmpty();
 };
 
